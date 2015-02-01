@@ -20,12 +20,14 @@ void create_sprites();
 int get_touchpad();
 void flash_lose();
 void clear_display();
+void clear_sprites();
 
 char sprite_mat[5][4];
 char null_sprite = '0';
 char sprite = 'X';
 int level = 0;
-int sprite_offset_x, sprite_offset_y, sprite_x_dir = 0;
+int sprite_offset_x = 0, sprite_offset_y = 0, sprite_x_dir = 0;
+int update_counter = 15;
 
 typedef enum {S_MENU, S_COUNTDOWN, S_PLAY, S_ADVANCE, S_LOSE} state_t;
 state_t state = S_MENU;
@@ -51,57 +53,68 @@ int main(void)
         switch (state)
         {
         case S_MENU: //Initial State
+        	clear_display();
+        	level = 0;
+        	update_counter = 0;
         	P1OUT |= (BIT1);
             GrStringDrawCentered(&g_sContext, "SPACE INVADERS", AUTO_STRING_LENGTH,
                                  51, 20, TRANSPARENT_TEXT);
             GrStringDrawCentered(&g_sContext, "Press X to start", AUTO_STRING_LENGTH,
                                  51, 40, TRANSPARENT_TEXT);
             refresh_display();
-            if (get_touchpad() == 1)
+            if (get_touchpad() == 0)
             {
                 state = S_COUNTDOWN;
             }
             break;
         case S_COUNTDOWN:
+        	P1OUT &= ~(BIT1 | BIT2 | BIT3 | BIT4 | BIT5);
         	clear_display();
             GrStringDrawCentered(&g_sContext, "3...", AUTO_STRING_LENGTH,
                                  51, 36, TRANSPARENT_TEXT);
             refresh_display();
-            swDelay(1);
+            swDelay(5000);
             clear_display();
             GrStringDrawCentered(&g_sContext, "2...", AUTO_STRING_LENGTH,
                                  51, 36, TRANSPARENT_TEXT);
             refresh_display();
-            swDelay(1);
+            swDelay(5000);
             clear_display();
             GrStringDrawCentered(&g_sContext, "1...", AUTO_STRING_LENGTH,
                                  51, 36, TRANSPARENT_TEXT);
             refresh_display();
-            swDelay(1);
+            swDelay(5000);
+            state = S_ADVANCE;
+            P1OUT |= (BIT1 | BIT2 | BIT3 | BIT4 | BIT5);
             break;
         case S_PLAY: //In game
             //Calculate sprite movement.
-            update_sprites();
+        	update_sprites();
             destroy_sprite(get_touchpad());
             result = draw_sprites();
             if (result == 1) state = S_ADVANCE;
             if (result == -1) state = S_LOSE;
             break;
         case S_ADVANCE: //Advance Level
+        	clear_sprites();
             level++;
+            clear_display();
             snprintf(level_str, 9, "Level %d", level);
             GrStringDrawCentered(&g_sContext, level_str, AUTO_STRING_LENGTH,
                                  51, 36, TRANSPARENT_TEXT);
             create_sprites();
             refresh_display();
             state = S_PLAY;
+            swDelay(5000);
             break;
         case S_LOSE: //You lose!
+        	P1OUT &= ~(BIT1 | BIT2 | BIT3 | BIT4 | BIT5);
+        	clear_display();
             GrStringDrawCentered(&g_sContext, "You lose!", AUTO_STRING_LENGTH,
                                  51, 36, TRANSPARENT_TEXT);
             refresh_display();
             flash_lose();
-            swDelay(1);
+            swDelay(5000);
             state = S_MENU;
             break;
         }
@@ -113,27 +126,40 @@ void flash_lose()
     //Make annoying sounds and lights when player loses.
 }
 
+void clear_sprites()
+{
+	int i, j;
+	sprite_offset_y = 0;
+	sprite_offset_x = 0;
+	for (i = 0; i < 5; i++)
+	{
+		for (j = 0; j < 4; j++)
+		{
+			sprite_mat[i][j] = null_sprite;
+		}
+	}
+}
+
 int get_touchpad()
 {
     //Get touchpad button pressed. Returns column that the button corresponds to.
 	switch (CapButtonRead())
 	{
 	case BUTTON_NONE:
-		return 0;
+		return -1;
 	case BUTTON_X:
-		return 1;
-	case BUTTON_SQ:
-		return 2;
-	case BUTTON_OCT:
-		return 3;
-	case BUTTON_TRI:
-		return 4;
-	case BUTTON_CIR:
-		return 5;
-	default:
 		return 0;
+	case BUTTON_SQ:
+		return 1;
+	case BUTTON_OCT:
+		return 2;
+	case BUTTON_TRI:
+		return 3;
+	case BUTTON_CIR:
+		return 4;
+	default:
+		return -1;
 	}
-	return 0;
 }
 
 void destroy_sprite(int column)
@@ -152,7 +178,7 @@ void destroy_sprite(int column)
 
 void create_sprites()
 {
-    unsigned int sprites_gen = level * 2;
+    unsigned int sprites_gen = (level * 2 > 20) ? 20 : level * 2;
     unsigned int i;
     for (i = 0; i < sprites_gen; i++)
     {
@@ -176,23 +202,24 @@ void add_sprite(int col)
 
 void update_sprites()
 {
-    if (sprite_offset_x > 10)
+    if (sprite_offset_x >= 5)
     {
         sprite_x_dir = 0;
         sprite_offset_y += 5;
     }
-    else if (sprite_offset_x < -10)
+    else if (sprite_offset_x <= -5)
     {
-        sprite_x_dir = 0;
+        sprite_x_dir = 1;
         sprite_offset_y += 5;
     }
-    sprite_offset_x = (sprite_x_dir == 1) ? sprite_offset_x + 2 : sprite_offset_x - 2;
+    sprite_offset_x = (sprite_x_dir == 1) ? sprite_offset_x + 2 + (level / 10) : sprite_offset_x - 2 - (level / 10);
+    (sprite_offset_x > 5) ? sprite_offset_x = 5 : (sprite_offset_x < -5) ? sprite_offset_x = -5 : 0;
 }
 
 int draw_sprites()
 {
 	clear_display();
-    int i, j, empty_count;
+    int i, j, empty_count = 0;
     //Draw sprites on screen.
     for (i = 0; i < 5; i++)
     {
@@ -201,9 +228,9 @@ int draw_sprites()
             if (sprite_mat[i][j] != null_sprite)
             {
                 //Draw sprite.
-                int x_pos = 5 + (j * 20) + sprite_offset_x;
-                int y_pos = 5 + (i * 10) + sprite_offset_y;
-                GrStringDrawCentered(&g_sContext, sprite_mat[i][j], 1,
+                int y_pos = 5 + (j * 10) + sprite_offset_y;
+                int x_pos = 12 + (i * 20) + sprite_offset_x;
+                GrStringDrawCentered(&g_sContext, "X", 1,
                                      x_pos, y_pos, TRANSPARENT_TEXT);
                 if (y_pos >= 60) return -1;
             }
