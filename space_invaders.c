@@ -9,8 +9,9 @@
 #include "peripherals.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include "tones.h"
 
-void swDelay(char numLoops);
+void swDelay(int numLoops);
 int draw_sprites();
 void refresh_display();
 void destroy_sprite(int column);
@@ -21,6 +22,7 @@ int get_touchpad();
 void flash_lose();
 void clear_display();
 void clear_sprites();
+void BuzzerOnFreq(int freq);
 
 char sprite_mat[5][4];
 char null_sprite = '0';
@@ -28,10 +30,16 @@ char sprite = 'X';
 int level = 0;
 int sprite_offset_x = 0, sprite_offset_y = 0, sprite_x_dir = 0;
 int update_counter = 15;
+int score = 0;
 
 typedef enum {S_MENU, S_COUNTDOWN, S_PLAY, S_ADVANCE, S_LOSE} state_t;
 state_t state = S_MENU;
 
+/** 
+ * @brief The main function for space invaders.
+ * 
+ * @return 0 if no errors, 1 if errors occurred at runtime.
+ */
 int main(void)
 {
     // Stop WDT
@@ -56,6 +64,7 @@ int main(void)
         	clear_display();
         	level = 0;
         	update_counter = 0;
+        	score = 0;
         	P1OUT |= (BIT1);
             GrStringDrawCentered(&g_sContext, "SPACE INVADERS", AUTO_STRING_LENGTH,
                                  51, 20, TRANSPARENT_TEXT);
@@ -65,6 +74,7 @@ int main(void)
             if (get_touchpad() == 0)
             {
                 state = S_COUNTDOWN;
+                BuzzerOnFreq(125);
             }
             break;
         case S_COUNTDOWN:
@@ -73,18 +83,21 @@ int main(void)
             GrStringDrawCentered(&g_sContext, "3...", AUTO_STRING_LENGTH,
                                  51, 36, TRANSPARENT_TEXT);
             refresh_display();
-            swDelay(5000);
+            swDelay(1);
             clear_display();
             GrStringDrawCentered(&g_sContext, "2...", AUTO_STRING_LENGTH,
                                  51, 36, TRANSPARENT_TEXT);
             refresh_display();
-            swDelay(5000);
+            BuzzerOnFreq(150);
+            swDelay(1);
             clear_display();
             GrStringDrawCentered(&g_sContext, "1...", AUTO_STRING_LENGTH,
                                  51, 36, TRANSPARENT_TEXT);
             refresh_display();
-            swDelay(5000);
+            BuzzerOnFreq(175);
+            swDelay(1);
             state = S_ADVANCE;
+            BuzzerOff();
             P1OUT |= (BIT1 | BIT2 | BIT3 | BIT4 | BIT5);
             break;
         case S_PLAY: //In game
@@ -94,6 +107,7 @@ int main(void)
             result = draw_sprites();
             if (result == 1) state = S_ADVANCE;
             if (result == -1) state = S_LOSE;
+            BuzzerOff();
             break;
         case S_ADVANCE: //Advance Level
         	clear_sprites();
@@ -105,7 +119,7 @@ int main(void)
             create_sprites();
             refresh_display();
             state = S_PLAY;
-            swDelay(5000);
+            swDelay(1);
             break;
         case S_LOSE: //You lose!
         	P1OUT &= ~(BIT1 | BIT2 | BIT3 | BIT4 | BIT5);
@@ -114,18 +128,37 @@ int main(void)
                                  51, 36, TRANSPARENT_TEXT);
             refresh_display();
             flash_lose();
-            swDelay(5000);
+            swDelay(1);
             state = S_MENU;
             break;
         }
     }
 }
 
+/** 
+ * @brief Flash the LEDs and play tones when the player loses.
+ */
 void flash_lose()
 {
     //Make annoying sounds and lights when player loses.
+	int i;
+	int note = 150;
+	for (i = 0; i < 4; i++)
+	{
+		note = (note == 150) ? 175 : 150;
+		BuzzerOnFreq(note);
+		swDelay(1);
+		P1OUT &= ~(BIT1 | BIT2 | BIT3 | BIT4 | BIT5);
+		swDelay(1);
+		P1OUT |= (BIT1 | BIT2 | BIT3 | BIT4 | BIT5);
+	}
+	BuzzerOff();
+	P1OUT &= ~(BIT1 | BIT2 | BIT3 | BIT4 | BIT5);
 }
 
+/** 
+ * @brief Clear the sprite array and sprite offsets.
+ */
 void clear_sprites()
 {
 	int i, j;
@@ -140,6 +173,11 @@ void clear_sprites()
 	}
 }
 
+/** 
+ * @brief Gets the touchpad button that's activated.
+ * 
+ * @return An int, the button pressed. Corresponds to the sprite column.
+ */
 int get_touchpad()
 {
     //Get touchpad button pressed. Returns column that the button corresponds to.
@@ -162,6 +200,11 @@ int get_touchpad()
 	}
 }
 
+/** 
+ * @brief Destroy a sprite in the specified column.
+ * 
+ * @param column The column to destroy a sprite in.
+ */
 void destroy_sprite(int column)
 {
     if (column == -1) return;
@@ -171,11 +214,16 @@ void destroy_sprite(int column)
         if (sprite_mat[column][i] != null_sprite)
         {
             sprite_mat[column][i] = null_sprite;
+            BuzzerOnFreq(200);
+            score++;
             return;
         }
     }
 }
 
+/** 
+ * @brief Create and fill the sprite array.
+ */
 void create_sprites()
 {
     unsigned int sprites_gen = (level * 2 > 20) ? 20 : level * 2;
@@ -187,6 +235,11 @@ void create_sprites()
     }
 }
 
+/** 
+ * @brief Add a sprite to the specified column.
+ * 
+ * @param col The column to add a sprite to.
+ */
 void add_sprite(int col)
 {
     int i;
@@ -200,27 +253,36 @@ void add_sprite(int col)
     }
 }
 
+/** 
+ * @brief Update the sprite offsets.
+ */
 void update_sprites()
 {
     if (sprite_offset_x >= 5)
     {
         sprite_x_dir = 0;
         sprite_offset_y += 5;
+        BuzzerOnFreq(100);
     }
     else if (sprite_offset_x <= -5)
     {
         sprite_x_dir = 1;
         sprite_offset_y += 5;
+        BuzzerOnFreq(100);
     }
     sprite_offset_x = (sprite_x_dir == 1) ? sprite_offset_x + 2 + (level / 10) : sprite_offset_x - 2 - (level / 10);
     (sprite_offset_x > 5) ? sprite_offset_x = 5 : (sprite_offset_x < -5) ? sprite_offset_x = -5 : 0;
 }
 
+/** 
+ * @brief Draw sprites onscreen.
+ * 
+ * @return 0 if no errors.
+ */
 int draw_sprites()
 {
 	clear_display();
     int i, j, empty_count = 0;
-    //Draw sprites on screen.
     for (i = 0; i < 5; i++)
     {
         for (j = 0; j < 4; j++)
@@ -249,33 +311,62 @@ int draw_sprites()
     return 0;
 }
 
+/** 
+ * @brief Clear the display.
+ */
 void clear_display()
 {
 	GrClearDisplay(&g_sContext);
 }
 
+/** 
+ * @brief Write all display changes to display.
+ */
 void refresh_display()
 {
 	GrFlush(&g_sContext);
 }
 
-void swDelay(char numLoops)
+/*
+ * Enable a PWM-controlled buzzer on P7.5
+ * This function makes use of TimerB0.
+ */
+void BuzzerOnFreq(int freq)
 {
-    // This function is a software delay. It performs
-    // useless loops to waste a bit of time
-    //
-    // Input: numLoops = number of delay loops to execute
-    // Output: none
-    //
-    // smj, ECE2049, 25 Aug 2013
+	// Initialize PWM output on P7.5, which corresponds to TB0.3
+	P7SEL |= BIT5; // Select peripheral output mode for P7.5
+	P7DIR |= BIT5;
 
-    volatile char i, j; // volatile to prevent optimization
+	TB0CTL  = (TBSSEL__ACLK|ID__1|MC__UP);  // Configure Timer B0 to use ACLK, divide by 1, up mode
+	TB0CTL  &= ~TBIE; 						// Explicitly Disable timer interrupts for safety
+
+	// Now configure the timer period, which controls the PWM period
+	// Doing this with a hard coded values is NOT the best method
+	// I do it here only as an example. You will fix this in Lab 2.
+	TB0CCR0   = freq; 					// Set the PWM period in ACLK ticks
+	TB0CCTL0 &= ~CCIE;					// Disable timer interrupts
+
+	// Configure CC register 3, which is connected to our PWM pin TB0.3
+	TB0CCTL3  = OUTMOD_7;					// Set/reset mode for PWM
+	TB0CCTL3 &= ~CCIE;						// Disable capture/compare interrupts
+	TB0CCR3   = TB0CCR0/2; 					// Configure a 50% duty cycle
+}
+
+/** 
+ * @brief Delay a specified number of loops/
+ * 
+ * @param numLoops The number of loops to delay.
+ */
+void swDelay(int numLoops)
+{
+    volatile unsigned long int i, j; // volatile to prevent optimization
     // by compiler
 
     for (j = 0; j < numLoops; j++)
     {
-        i = (char)50000 ;                   // SW Delay
+        i = 50000;                   // SW Delay
         while (i > 0)               // could also have used while (i)
             i--;
     }
 }
+
