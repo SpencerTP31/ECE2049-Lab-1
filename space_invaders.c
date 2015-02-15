@@ -330,6 +330,7 @@ void refresh_display()
 /*
  * Enable a PWM-controlled buzzer on P7.5
  * This function makes use of TimerB0.
+ * ACLK = 32768Hz
  */
 void BuzzerOnFreq(int freq)
 {
